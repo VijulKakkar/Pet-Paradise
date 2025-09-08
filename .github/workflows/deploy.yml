@@ -1,0 +1,50 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  PROJECT_ID: bsc-na-ai-itsd-272148
+  REGION: us-east1
+  REPOSITORY: web
+  SERVICE: petparadise
+  IMAGE: us-east1-docker.pkg.dev/bsc-na-ai-itsd-272148/web/petparadise
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${REGION}-docker.pkg.dev --quiet
+
+      - name: Build & Push Docker image
+        run: |
+          docker buildx create --use --name builder || true
+          docker buildx build \
+            --platform linux/amd64 \
+            -t ${IMAGE}:${GITHUB_SHA} \
+            -t ${IMAGE}:latest \
+            --push .
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${SERVICE} \
+            --image ${IMAGE}:${GITHUB_SHA} \
+            --region ${REGION} \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 80
